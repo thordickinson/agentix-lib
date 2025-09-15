@@ -1,9 +1,9 @@
 from ._version import __version__
 
-from .models import AgentState, Message, Tool, ToolCallMsg, Final, parse_model_step
+from .models import AgentState, Message, Tool, ToolCallMsg, Final
 from .agent import Agent
-from .llm import LLMClient, LiteLLMAdapter
-from .context import ContextManager  # ⬅️ exporta la interfaz
+from .context import ContextManager
+from .tools.tool_parser import tool_from_fn
 
 __all__ = [
     "__version__",
@@ -13,8 +13,6 @@ __all__ = [
     "Tool",
     "ToolCallMsg",
     "Final",
-    "parse_model_step",
-    "LLMClient",
-    "LiteLLMAdapter",
     "ContextManager",
+    "tool_from_fn"
 ]

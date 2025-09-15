@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import Any, Dict, List
 from pydantic import BaseModel
 
+from agentix import tool_from_fn
 from agentix.models import Tool, AgentState
 from agentix.stack.view import View
 from ..repo import PropertyRepo
@@ -41,8 +42,8 @@ class PropertyCreateView(View):
             return {"nav": "cancel"}
 
         tools += [
-            Tool(name="set_property_field", desc="Asignar campo", input_model=SetFieldInput, fn=set_field),
-            Tool(name="__confirm", desc="Guardar", input_model=NoInput, fn=_confirm),
-            Tool(name="__cancel", desc="Cancelar", input_model=NoInput, fn=_cancel),
+            tool_from_fn(set_field),
+            tool_from_fn(_confirm),
+            tool_from_fn(_cancel),
         ]
         return tools

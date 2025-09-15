@@ -2,16 +2,11 @@ from __future__ import annotations
 from typing import Any, Dict, List
 from pydantic import BaseModel
 
+from agentix import tool_from_fn
 from agentix.models import Tool, AgentState
 from agentix.stack.view import View
 from ..repo import PropertyRepo
 
-class SetFieldInput(BaseModel):
-    field: str
-    value: Any
-
-class OpenClientSelectorInput(BaseModel):
-    hint: str | None = None
 
 class PropertyEditView(View):
     screen_key = "property_edit"
@@ -28,13 +23,12 @@ class PropertyEditView(View):
     def build_tools(self, agent_state: AgentState, view_state: Dict[str, Any]) -> List[Tool]:
         tools: List[Tool] = []
 
-        async def set_field(inputs: SetFieldInput, v: Dict[str, Any], a: AgentState, uid: str, sid: str):
-            v.setdefault("changes", {})
-            v["changes"][inputs.field] = inputs.value
-            return {"ok": True, "changed": {inputs.field: inputs.value}}
+        async def set_field():
+            print("set_field")
+            return {"nav": "cancel"}
 
-        async def open_client_selector(inputs: OpenClientSelectorInput, v: Dict[str, Any], a: AgentState, uid: str, sid: str):
-            return View.call_view("client_select", {"hint": inputs.hint}, return_path="relations.client")
+        async def open_client_selector():
+            return {"nav": "cancel"}
 
         class NoInput(BaseModel): pass
 
@@ -50,9 +44,9 @@ class PropertyEditView(View):
             return {"nav": "cancel"}
 
         tools += [
-            Tool(name="set_field", desc="Cambiar un campo", input_model=SetFieldInput, fn=set_field),
-            Tool(name="open_client_selector", desc="Asociar cliente (subvista)", input_model=OpenClientSelectorInput, fn=open_client_selector),
-            Tool(name="__confirm", desc="Guardar cambios", input_model=NoInput, fn=_confirm),
-            Tool(name="__cancel", desc="Descartar", input_model=NoInput, fn=_cancel),
+            tool_from_fn(set_field),
+            tool_from_fn(open_client_selector),
+            tool_from_fn(_confirm),
+            tool_from_fn(_cancel),
         ]
         return tools

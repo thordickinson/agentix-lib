@@ -1,13 +1,14 @@
 from __future__ import annotations
 import json
-from typing import Any, Dict, List, Optional, Callable
+from typing import Any, Dict, List, Optional
 
-from .config import RETAIN_TAKE, MAIN_MODEL
-from .models import Message, AgentState, ToolCallMsg, Final, parse_model_step, Tool
+from .config import RETAIN_TAKE
+from .models import Message, AgentState
 from .summarizer import maybe_summarize_and_rotate
 from .repo_protocol import Repo
-from .llm import LLMClient
 from .context import ContextManager
+from .tools.litellm_formatter import tool_to_dict
+import litellm
 
 def _snapshot_state(state: AgentState) -> Dict[str, Any]:
     return state.model_dump(mode="python", round_trip=True)
@@ -45,20 +46,14 @@ class Agent:
     def __init__(
         self,
         repo: Repo,
-        llm: LLMClient,
-        developer_instructions_fn: Callable[[AgentState], str],
         context_manager: ContextManager,
+        model: Optional[str] = "gpt-3.5-turbo",
         max_steps: int = 6,
     ):
         self.repo = repo
-        self.llm = llm
-        self.developer_instructions_fn = developer_instructions_fn
         self.cm = context_manager
         self.max_steps = max_steps
-
-    @staticmethod
-    def _schemas(tools: List[Tool]) -> List[Dict[str, Any]]:
-        return [{"name": t.name, "description": t.desc, "schema": t.input_model.model_json_schema()} for t in tools]
+        self.model = model
 
     async def run(self, user_id: str, session_id: str, agent_input: str, agent_state: Optional[AgentState] = None) -> str:
         agent_state = agent_state or AgentState()
@@ -69,34 +64,26 @@ class Agent:
         sdoc = await self.repo.append_message(session_id, user_id, user_msg)
         history += [user_msg]
 
-        developer_instructions = self.developer_instructions_fn(agent_state)
-
         for _ in range(self.max_steps):
             # Contexto + tools vienen del ContextManager
             system_message, tools = self.cm.build(agent_state, user_id, session_id)
-            tool_specs = self._schemas(tools)
-            combined_instructions = developer_instructions + ("\n\n" + system_message if system_message else "")
+            system_msg = Message(role="system", content=system_message)
+            tool_specs = list(map(tool_to_dict, tools))
+            messages = list(map(lambda m: m.to_wire(), ([system_msg] + history)))
 
-            raw = await self.llm.generate(history, tool_specs, combined_instructions, MAIN_MODEL)
-            try:
-                action = parse_model_step(raw)
-            except Exception:
-                reprimand = Message(role="assistant", content='{"type":"final","answer":"Formato inválido"}')
-                history.append(reprimand)
-                await self.repo.append_message(session_id, user_id, reprimand)
-                continue
+            raw = await litellm.acompletion(model=self.model, messages=messages, tools=tool_specs, tool_choice="auto")
+            response: litellm.Choices = raw.choices[0]
 
-            if isinstance(action, ToolCallMsg):
+            if response.finish_reason == "tool_calls":
+                tool_calls = response.message.tool_calls or []
                 tools_by_name = {t.name: t for t in tools}
-                t = tools_by_name.get(action.call.name)
-                _before = _snapshot_state(agent_state)
-
-                if not t:
-                    obs = {"error": f"Tool '{action.call.name}' no disponible"}
-                else:
+                for tool_call in tool_calls:
+                    function_call = tool_call.function
+                    t = tools_by_name.get(function_call.name)
+                    _before = _snapshot_state(agent_state)
                     try:
-                        parsed = t.input_model.model_validate(action.call.args)
-                        result = t.fn(parsed, {}, agent_state, user_id, session_id)  # view_state lo maneja el CM
+                        parsed = json.loads(function_call.arguments or "{}")
+                        result = t.fn(**parsed)
                         if hasattr(result, "__await__"):
                             result = await result
                         obs = {"ok": True, "tool": t.name, "output": result}
@@ -106,7 +93,7 @@ class Agent:
                             import json as _json
                             obs = {"error": "Args inválidos", "details": _json.loads(ex.json())}
                         else:
-                            obs = {"error": f"Fallo tool '{action.call.name}'", "details": str(ex)}
+                            obs = {"error": f"Fallo tool '{tool_call.call.name}'", "details": str(ex)}
 
                 # navegación/side-effects la maneja el CM
                 if obs.get("ok") and isinstance(obs.get("output"), dict):
@@ -123,14 +110,13 @@ class Agent:
                 history.append(obs_msg)
 
                 await maybe_summarize_and_rotate(self.repo, session_id, user_id)
-                developer_instructions = self.developer_instructions_fn(agent_state)
                 continue
 
-            if isinstance(action, Final):
-                final_msg = Message(role="assistant", content=action.answer)
+            if response.finish_reason == "stop":
+                final_msg = Message(role="assistant", content=response.message.content)
                 await self.repo.append_message(session_id, user_id, final_msg)
                 await maybe_summarize_and_rotate(self.repo, session_id, user_id)
-                return action.answer
+                return final_msg.content
 
         fallback = "No se obtuvo respuesta final dentro del límite de pasos."
         await self.repo.append_message(session_id, user_id, Message(role="assistant", content=fallback))

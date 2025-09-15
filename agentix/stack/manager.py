@@ -76,17 +76,6 @@ class StackContextManager(ContextManager):
 
             tools = view.build_tools(agent_state, frame.view_state)
         
-        wrapped: List[Tool] = []
-        for t in tools:
-            base_fn = t.fn
-            async def _wrapped(inputs, _ignored_vstate, agent_state, uid, sid, __base_fn=base_fn, __vstate=frame.view_state):
-                res = __base_fn(inputs, __vstate, agent_state, uid, sid)
-                if hasattr(res, "__await__"):
-                    res = await res
-                return res
-            wrapped.append(Tool(name=t.name, desc=t.desc, input_model=t.input_model, fn=_wrapped))
-        tools = wrapped
-
         return system_message, tools
 
     async def handle_nav(self, agent_state: AgentState, user_id: str, session_id: str, out: Dict[str, Any]) -> None:

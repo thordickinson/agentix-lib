@@ -1,9 +1,10 @@
 from __future__ import annotations
 from typing import Any, Dict, List
-from pydantic import BaseModel
 
+from agentix import tool_from_fn
 from agentix.models import Tool, AgentState
 from agentix.stack.view import View
+
 
 class IndexView(View):
     screen_key = "index"
@@ -16,15 +17,17 @@ class IndexView(View):
         )
 
     def build_tools(self, agent_state: AgentState, view_state: Dict[str, Any]) -> List[Tool]:
-        class NoInput(BaseModel): pass
         tools: List[Tool] = []
 
-        async def open_list(_i: NoInput, vstate: Dict[str, Any], astate: AgentState, uid: str, sid: str):
+        async def open_list():
+            """
+            Abre la lista de propiedades del usuario actual
+            """
             return View.call_view("property_list")
 
-        async def open_create(_i: NoInput, vstate: Dict[str, Any], astate: AgentState, uid: str, sid: str):
+        async def open_create():
             return View.call_view("property_create")
 
-        tools.append(Tool(name="open_property_list", desc="Abrir lista de propiedades", input_model=NoInput, fn=open_list))
-        tools.append(Tool(name="open_property_create", desc="Crear nueva propiedad", input_model=NoInput, fn=open_create))
+        tools.append(tool_from_fn(open_list))
+        tools.append(tool_from_fn(open_create))
         return tools

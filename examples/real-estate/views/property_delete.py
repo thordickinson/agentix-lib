@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import Any, Dict, List
 from pydantic import BaseModel
 
+from agentix import tool_from_fn
 from agentix.models import Tool, AgentState
 from agentix.stack.view import View
 from ..repo import PropertyRepo
@@ -28,7 +29,7 @@ class PropertyDeleteView(View):
             return {"nav": "cancel"}
 
         tools += [
-            Tool(name="__confirm", desc="Confirmar eliminación", input_model=NoInput, fn=_confirm),
-            Tool(name="__cancel", desc="Cancelar", input_model=NoInput, fn=_cancel),
+            tool_from_fn(_confirm),
+            tool_from_fn(_cancel),
         ]
         return tools

@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import Any, Dict, List
 from pydantic import BaseModel
 
+from agentix import tool_from_fn
 from agentix.models import Tool, AgentState
 from agentix.stack.view import View
 from ..repo import PropertyRepo
@@ -47,9 +48,7 @@ class PropertyListView(View):
             return {"nav": "cancel"}
 
         tools += [
-            Tool(name="list_properties", desc="Listar propiedades", input_model=ListInput, fn=list_properties),
-            Tool(name="open_property_editor", desc="Editar propiedad", input_model=OpenEditorInput, fn=open_editor),
-            Tool(name="open_property_delete", desc="Eliminar propiedad", input_model=OpenDeleteInput, fn=open_delete),
-            Tool(name="__cancel", desc="Volver", input_model=NoInput, fn=_cancel),
+            tool_from_fn(list_properties), tool_from_fn(open_editor),
+            tool_from_fn(open_delete), tool_from_fn(_cancel),
         ]
         return tools

@@ -19,7 +19,11 @@ classifiers = [
 
 dependencies = [
   "pydantic>=2.6",
-  "litellm>=1.43"
+  "litellm>=1.43",
+  "langfuse>=3.3.4",
+  "opentelemetry-api>=1.37.0",
+  "opentelemetry-sdk>=1.37.0",
+  "opentelemetry-exporter-otlp>=1.37.0",
 ]
 
 [project.optional-dependencies]

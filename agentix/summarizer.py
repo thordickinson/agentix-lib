@@ -15,4 +15,4 @@ async def maybe_summarize_and_rotate(repo, session_id: str, user_id: str):
     head = msgs[:-RETAIN_TAKE]
     tail = msgs[-RETAIN_TAKE:]
     summary = {"range": [0, len(head)], "summary": f"{len(head)} mensajes resumidos"}
-    await repo.replace_recent_messages(session_id, tail, summary)
+    # await repo.replace_recent_messages(session_id, tail, summary)

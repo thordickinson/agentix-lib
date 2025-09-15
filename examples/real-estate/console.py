@@ -2,12 +2,14 @@ from __future__ import annotations
 import asyncio
 from typing import Optional
 
-from agentix import Agent, AgentState, LiteLLMAdapter
+from agentix import Agent, AgentState
 from agentix.storage.mongo import MongoRepo
 from agentix.context import ContextManager
 from agentix.stack import StackContextManager
 from agentix.utils.console import console_loop
 from .router import build_router
+
+
 
 def developer_instructions_fn(state: AgentState) -> str:
     tone = state.memory.get("tone", "claro y directo")
@@ -22,15 +24,10 @@ async def interactive_loop():
     router = build_router()
     cm: ContextManager = StackContextManager(router)
 
-    # LLM
-    llm = LiteLLMAdapter(model=None)  # usa MAIN_MODEL del core si None
 
     agent = Agent(
         repo=repo,
-        llm=llm,
-        developer_instructions_fn=developer_instructions_fn,
-        context_manager=cm,
-        max_steps=6,
+        context_manager=cm
     )
 
     user_id = "user_demo"

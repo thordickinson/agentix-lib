@@ -1,7 +1,8 @@
 from __future__ import annotations
-from typing import Any, Dict, Literal, Union, Type
+from typing import Any, Dict, Literal, Union, Optional, List
 from datetime import datetime, timezone
 from pydantic import BaseModel, Field, ValidationError
+from litellm import ModelResponse
 
 # ===== Mensajes y estado =====
 Role = Literal["system", "user", "assistant"]
@@ -20,12 +21,20 @@ class AgentState(BaseModel):
     memory: Dict[str, Any] = Field(default_factory=dict)
     scratchpad: list[str] = Field(default_factory=list)
 
-# ===== Herramientas =====
+class Param(BaseModel):
+    name: str
+    type: str
+    desc: str
+    optional: bool = False
+    default_value: Optional[Any] = None
+    enum_values: Optional[List[str]] = None
+
+
 class Tool(BaseModel):
     name: str
     desc: str
-    input_model: Type[BaseModel]
-    fn: Any  # async function(inputs, view_state, agent_state, user_id, session_id)
+    params: List[Param]
+    fn: Any
 
 # ===== Salida del modelo =====
 class ToolCall(BaseModel):
@@ -42,12 +51,3 @@ class Final(BaseModel):
 
 ModelStep = Union[ToolCallMsg, Final]
 
-def parse_model_step(raw: str) -> ModelStep:
-    import json
-    data = json.loads(raw) if isinstance(raw, str) else raw
-    for cls in (ToolCallMsg, Final):
-        try:
-            return cls.model_validate(data)
-        except ValidationError:
-            continue
-    raise ValueError("Salida LLM inválida: se esperaba 'tool_call' o 'final'")
