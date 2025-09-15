@@ -81,17 +81,13 @@ class MongoRepo(Repo):
         msg_doc = self._msg_to_doc(msg)
         now = self._utcnow()
 
-        # Insertar en 'sessions.messages'
+        # ✅ Combina $push y $set en el MISMO dict
         res = await self.sessions.find_one_and_update(
             {"session_id": session_id, "user_id": user_id},
-            {
-                {"$push": {"messages": msg_doc}},
-                {"$set": {"updated_at": now}},
-            },
+            {"$push": {"messages": msg_doc}, "$set": {"updated_at": now}},
             return_document=ReturnDocument.AFTER,
         )
 
-        # Auditoría opcional en colección 'messages'
         if self.audit_messages:
             audit_doc = {
                 "session_id": session_id,
