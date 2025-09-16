@@ -2,7 +2,7 @@ from ._version import __version__
 
 from .models import Message, Tool, AgentContext
 from .agent import Agent
-from .context import ContextManager
+from .context import ContextManager, SimpleContextManager
 from .tools.tool_parser import tool_from_fn
 
 __all__ = [
@@ -12,5 +12,6 @@ __all__ = [
     "Message",
     "Tool",
     "ContextManager",
+    "SimpleContextManager",
     "tool_from_fn"
 ]

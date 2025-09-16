@@ -4,8 +4,9 @@ from datetime import datetime, timezone
 from pydantic import BaseModel, Field
 
 
-class AgentContext:
-    ...
+class AgentContext(BaseModel):
+    session_id: str
+    user_id: str
 
 class Message(BaseModel):
     role: str

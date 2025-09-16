@@ -1,9 +1,15 @@
 from __future__ import annotations
-from typing import Protocol, Tuple, List, Dict, Any
+from typing import Protocol, Tuple, List
 from .models import Tool, AgentContext
+from pydantic import BaseModel
+
+class LLMInput(BaseModel):
+    system: str
+    tools: list[Tool]
+
 
 class ContextManager(Protocol):
-    def build(self, agent_state: AgentContext, user_id: str, session_id: str) -> Tuple[str, List[Tool]]:
+    def build(self, agent_state: AgentContext) -> LLMInput:
         """
         Devuelve:
           - system_message (str): bloque para añadir al prompt (breadcrumb / instrucciones de vista / memoria)
@@ -11,9 +17,13 @@ class ContextManager(Protocol):
         """
         ...
 
-    async def handle_nav(self, agent_state: AgentContext, user_id: str, session_id: str, tool_output: Dict[str, Any]) -> None:
-        """
-        Procesa la salida de una tool (intenciones de navegación: push_view, confirm, cancel, etc.),
-        actualiza agent_state y resuelve retornos (__last_call, return_path, etc.).
-        """
-        ...
+
+class SimpleContextManager(ContextManager):
+    
+    def __init__(self, system: str, tools: list[Tool] = []):
+        super().__init__()
+        self.system = system
+        self.tools = tools
+    
+    def build(self, agent_state):
+        return LLMInput(system=self.system, tools=self.tools)

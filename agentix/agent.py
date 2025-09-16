@@ -87,7 +87,7 @@ class Agent:
         return result
 
     async def run(self, user_id: str, session_id: str, agent_input: str) -> str:
-        agent_context = AgentContext()
+        agent_context = AgentContext(session_id = session_id, user_id=user_id)
         session_data = await self.repo.get_or_create_session(session_id, user_id)
         
         with langfuse.start_as_current_observation(as_type="agent", name=self.name, input=agent_input) as run_span:
@@ -100,9 +100,9 @@ class Agent:
 
             for _ in range(self.max_steps):
                 # Contexto + tools vienen del ContextManager
-                system_message, tools = self.cm.build(agent_context, user_id, session_id)
-                system_msg = { "role": "system", "content": system_message }
-                tool_specs = list(map(tool_to_dict, tools))
+                llm_input = self.cm.build(agent_context)
+                system_msg = { "role": "system", "content": llm_input.system }
+                tool_specs = list(map(tool_to_dict, llm_input.tools))
                 messages = [system_msg] + history + run_messages
 
                 with langfuse.start_as_current_observation(name=self.model, as_type="generation",
@@ -121,7 +121,7 @@ class Agent:
 
                 if response.finish_reason == "tool_calls":
                     tool_calls = response.message.tool_calls or []
-                    tools_by_name = {t.name: t for t in tools}
+                    tools_by_name = {t.name: t for t in llm_input.tools}
                     for tool_call in tool_calls:
                         function_call = tool_call.function
                         t = tools_by_name.get(function_call.name)
@@ -152,13 +152,9 @@ class Agent:
                 if response.finish_reason == "stop":
                     final_msg = Message(role="assistant", content=response.message.content)
                     run_span.update(output=response.message.content)
-                    await self.repo.append_message(session_id, user_id, final_msg)
-                    await maybe_summarize_and_rotate(self.repo, session_id, user_id)
                     return final_msg.content
 
             fallback = "No se obtuvo respuesta final dentro del límite de pasos."
             run_span.update(output="[max-invocation-limit]")
-            await self.repo.append_message(session_id, user_id, Message(role="assistant", content=fallback))
-            await maybe_summarize_and_rotate(self.repo, session_id, user_id)
             return fallback
 
