@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import Any, Dict, List, Callable, Optional
 from dataclasses import dataclass
-from agentix.models import Tool, AgentState
+from agentix.models import Tool, AgentContext
 
 @dataclass
 class NavIntent:
@@ -12,9 +12,9 @@ class NavIntent:
 
 class View:
     screen_key: str
-    def instructions(self, agent_state: AgentState, view_state: Dict[str, Any]) -> str: return ""
-    def memory_instructions(self, agent_state: AgentState, view_state: Dict[str, Any]) -> str: return ""
-    def build_tools(self, agent_state: AgentState, view_state: Dict[str, Any]) -> List[Tool]: return []
+    def instructions(self, agent_state: AgentContext, view_state: Dict[str, Any]) -> str: return ""
+    def memory_instructions(self, agent_state: AgentContext, view_state: Dict[str, Any]) -> str: return ""
+    def build_tools(self, agent_state: AgentContext, view_state: Dict[str, Any]) -> List[Tool]: return []
     @staticmethod
     def call_view(target_screen_key: str, params: Dict[str, Any] | None = None, return_path: str | None = None) -> Dict[str, Any]:
         return {"nav": "push_view", "target": target_screen_key, "params": params or {}, "return_path": return_path}

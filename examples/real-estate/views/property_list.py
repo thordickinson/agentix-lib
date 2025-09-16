@@ -3,7 +3,7 @@ from typing import Any, Dict, List
 from pydantic import BaseModel
 
 from agentix import tool_from_fn
-from agentix.models import Tool, AgentState
+from agentix.models import Tool, AgentContext
 from agentix.stack.view import View
 from ..repo import PropertyRepo
 
@@ -19,7 +19,7 @@ class OpenDeleteInput(BaseModel):
 class PropertyListView(View):
     screen_key = "property_list"
 
-    def instructions(self, agent_state: AgentState, view_state: Dict[str, Any]) -> str:
+    def instructions(self, agent_state: AgentContext, view_state: Dict[str, Any]) -> str:
         return (
             "Lista de propiedades.\n"
             "- list_properties {limit}\n"
@@ -28,23 +28,23 @@ class PropertyListView(View):
             "- __cancel para volver\n"
         )
 
-    def build_tools(self, agent_state: AgentState, view_state: Dict[str, Any]) -> List[Tool]:
+    def build_tools(self, agent_state: AgentContext, view_state: Dict[str, Any]) -> List[Tool]:
         tools: List[Tool] = []
 
-        async def list_properties(inputs: ListInput, vstate: Dict[str, Any], astate: AgentState, uid: str, sid: str):
+        async def list_properties(inputs: ListInput, vstate: Dict[str, Any], astate: AgentContext, uid: str, sid: str):
             repo = PropertyRepo()
             items = await repo.list(limit=inputs.limit)
             vstate["items"] = items
             return {"properties": items}
 
-        async def open_editor(inputs: OpenEditorInput, vstate: Dict[str, Any], astate: AgentState, uid: str, sid: str):
+        async def open_editor(inputs: OpenEditorInput, vstate: Dict[str, Any], astate: AgentContext, uid: str, sid: str):
             return View.call_view("property_edit", {"property_id": inputs.property_id, "changes": {}, "relations": {}}, return_path=None)
 
-        async def open_delete(inputs: OpenDeleteInput, vstate: Dict[str, Any], astate: AgentState, uid: str, sid: str):
+        async def open_delete(inputs: OpenDeleteInput, vstate: Dict[str, Any], astate: AgentContext, uid: str, sid: str):
             return View.call_view("property_delete", {"property_id": inputs.property_id}, return_path=None)
 
         class NoInput(BaseModel): pass
-        async def _cancel(_i: NoInput, v: Dict[str, Any], a: AgentState, uid: str, sid: str):
+        async def _cancel(_i: NoInput, v: Dict[str, Any], a: AgentContext, uid: str, sid: str):
             return {"nav": "cancel"}
 
         tools += [

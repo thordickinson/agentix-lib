@@ -3,7 +3,7 @@ from typing import Any, Dict, List
 from pydantic import BaseModel
 
 from agentix import tool_from_fn
-from agentix.models import Tool, AgentState
+from agentix.models import Tool, AgentContext
 from agentix.stack.view import View
 from ..repo import PropertyRepo
 
@@ -11,7 +11,7 @@ from ..repo import PropertyRepo
 class PropertyEditView(View):
     screen_key = "property_edit"
 
-    def instructions(self, agent_state: AgentState, view_state: Dict[str, Any]) -> str:
+    def instructions(self, agent_state: AgentContext, view_state: Dict[str, Any]) -> str:
         pid = view_state.get("property_id")
         return (
             f"Editando propiedad {pid}.\n"
@@ -20,7 +20,7 @@ class PropertyEditView(View):
             "- __confirm para guardar, __cancel para descartar\n"
         )
 
-    def build_tools(self, agent_state: AgentState, view_state: Dict[str, Any]) -> List[Tool]:
+    def build_tools(self, agent_state: AgentContext, view_state: Dict[str, Any]) -> List[Tool]:
         tools: List[Tool] = []
 
         async def set_field():
@@ -32,7 +32,7 @@ class PropertyEditView(View):
 
         class NoInput(BaseModel): pass
 
-        async def _confirm(_i: NoInput, v: Dict[str, Any], a: AgentState, uid: str, sid: str):
+        async def _confirm(_i: NoInput, v: Dict[str, Any], a: AgentContext, uid: str, sid: str):
             repo = PropertyRepo()
             pid = v.get("property_id")
             changes = v.get("changes", {})
@@ -40,7 +40,7 @@ class PropertyEditView(View):
             v["__pending_result"] = res
             return {"nav": "confirm", "result": res}
 
-        async def _cancel(_i: NoInput, v: Dict[str, Any], a: AgentState, uid: str, sid: str):
+        async def _cancel(_i: NoInput, v: Dict[str, Any], a: AgentContext, uid: str, sid: str):
             return {"nav": "cancel"}
 
         tools += [

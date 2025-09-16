@@ -2,7 +2,7 @@ from __future__ import annotations
 import asyncio
 from typing import Optional
 
-from agentix import Agent, AgentState
+from agentix import Agent, AgentContext
 from agentix.storage.mongo import MongoRepo
 from agentix.context import ContextManager
 from agentix.stack import StackContextManager
@@ -10,11 +10,6 @@ from agentix.utils.console import console_loop
 from .router import build_router
 import os
 
-
-
-def developer_instructions_fn(state: AgentState) -> str:
-    tone = state.memory.get("tone", "claro y directo")
-    return f"- Sé {tone}. No inventes datos.\n- Responde en español.\n"
 
 os.environ["LANGFUSE_TRACING_ENVIRONMENT"] = "development"
 
@@ -36,14 +31,12 @@ async def interactive_loop():
 
     user_id = "user_demo"
     session_id = "session_demo"
-    state: Optional[AgentState] = AgentState(memory={"tone": "crítico y preciso"})
 
     await console_loop(
         agent=agent,
         repo=repo,
         user_id=user_id,
         session_id=session_id,
-        state=state,
         messages_tail=8,
     )
 

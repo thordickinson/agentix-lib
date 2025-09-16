@@ -1,6 +1,6 @@
 from ._version import __version__
 
-from .models import AgentState, Message, Tool, ToolCallMsg, Final
+from .models import Message, Tool, AgentContext
 from .agent import Agent
 from .context import ContextManager
 from .tools.tool_parser import tool_from_fn
@@ -8,11 +8,9 @@ from .tools.tool_parser import tool_from_fn
 __all__ = [
     "__version__",
     "Agent",
-    "AgentState",
+    "AgentContext",
     "Message",
     "Tool",
-    "ToolCallMsg",
-    "Final",
     "ContextManager",
     "tool_from_fn"
 ]

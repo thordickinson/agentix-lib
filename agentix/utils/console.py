@@ -3,13 +3,13 @@ import asyncio
 import pprint
 from typing import Callable, Optional, Sequence
 
-from agentix import Agent, AgentState
+from agentix import Agent, AgentContext
 from agentix.repo_protocol import Repo
 
 # Tipo para función que imprime/serializa el "stack" según tu ContextManager
-StackDumpFn = Callable[[AgentState], Sequence[dict]]
+StackDumpFn = Callable[[AgentContext], Sequence[dict]]
 
-def _default_stack_dump(state: AgentState) -> Sequence[dict]:
+def _default_stack_dump(state: AgentContext) -> Sequence[dict]:
     """
     Implementación por defecto: asume que el ContextManager tipo 'stack'
     guarda los frames en state.memory['ui_stack'] como lista de dicts.
@@ -25,7 +25,6 @@ async def console_loop(
     repo: Repo,
     user_id: str = "user_console",
     session_id: str = "session_console",
-    state: Optional[AgentState] = None,
     prompt: str = "Tú: ",
     intro: str = "=== Agentix Console ===\nComandos: :exit, :state, :stack, :messages, :reset",
     messages_tail: int = 10,
@@ -38,21 +37,20 @@ async def console_loop(
     - agent: instancia de Agent ya configurada (Repo, LLM, ContextManager, etc.)
     - repo: implementación Repo usada por el agent (para mostrar mensajes)
     - user_id, session_id: identificadores de la sesión
-    - state: AgentState (si None, se crea uno nuevo)
+    - state: AgentContext (si None, se crea uno nuevo)
     - prompt: prefijo del input
     - intro: mensaje de bienvenida
     - messages_tail: cuántos mensajes mostrar en ':messages'
-    - stack_dump_fn: cómo volcar el stack desde AgentState (por defecto lee 'ui_stack')
+    - stack_dump_fn: cómo volcar el stack desde AgentContext (por defecto lee 'ui_stack')
     - input_fn: función de entrada (inyectable para tests)
 
     Comandos soportados:
       :exit / :quit   -> salir
-      :state          -> imprimir AgentState
+      :state          -> imprimir AgentContext
       :stack          -> imprimir stack (según stack_dump_fn)
       :messages       -> mostrar últimos N mensajes de la sesión
-      :reset          -> limpiar stack en AgentState (clave 'ui_stack')
+      :reset          -> limpiar stack en AgentContext (clave 'ui_stack')
     """
-    st = state or AgentState()
     print(intro)
 
     while True:
@@ -66,21 +64,6 @@ async def console_loop(
             print("Saliendo...")
             break
 
-        if low == ":state":
-            print("\n--- AgentState ---")
-            pprint.pprint(st.model_dump(mode="python"))
-            continue
-
-        if low == ":stack":
-            print("\n--- Stack ---")
-            frames = stack_dump_fn(st) or []
-            for i, fr in enumerate(frames):
-                screen = fr.get("screen_key")
-                params = fr.get("params")
-                vstate = fr.get("view_state")
-                print(f"[{i}] screen={screen} params={params} view_state={vstate}")
-            continue
-
         if low == ":messages":
             sdoc = await repo.get_or_create_session(session_id, user_id)
             print(f"\n--- Últimos mensajes (tail={messages_tail}) ---")
@@ -90,14 +73,8 @@ async def console_loop(
                 print(f"{role}: {content}")
             continue
 
-        if low == ":reset":
-            # Por convención limpiamos la clave estándar del StackContextManager
-            st.memory["ui_stack"] = []
-            print("Stack reseteado (volverá a index en el próximo turno).")
-            continue
-
         # --- Entrada normal: se envía al agente ---
-        out = await agent.run(user_id, session_id, user_input, st)
+        out = await agent.run(user_id, session_id, user_input)
         print(f"Agente: {out}")
 
 
@@ -107,7 +84,7 @@ def run_console_sync(
     repo: Repo,
     user_id: str = "user_console",
     session_id: str = "session_console",
-    state: Optional[AgentState] = None,
+    state: Optional[AgentContext] = None,
     **kwargs,
 ) -> None:
     """

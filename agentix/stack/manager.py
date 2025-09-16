@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import Any, Dict, List, Tuple
 
-from agentix.models import AgentState, Tool
+from agentix.models import AgentContext, Tool
 from agentix.context import ContextManager
 from .frames import StackFrame
 from .view import ViewRouter
@@ -17,7 +17,7 @@ class StackContextManager(ContextManager):
         self.state_key = state_key or self.STATE_KEY
 
     # --------- helpers de stack ----------
-    def _get_frames(self, agent_state: AgentState) -> List[StackFrame]:
+    def _get_frames(self, agent_state: AgentContext) -> List[StackFrame]:
         raw = agent_state.memory.get(self.state_key, [])
         frames: List[StackFrame] = []
         if isinstance(raw, list):
@@ -30,7 +30,7 @@ class StackContextManager(ContextManager):
                 ))
         return frames
 
-    def _save_frames(self, agent_state: AgentState, frames: List[StackFrame]) -> None:
+    def _save_frames(self, agent_state: AgentContext, frames: List[StackFrame]) -> None:
         agent_state.memory[self.state_key] = [
             {
                 "screen_key": fr.screen_key,
@@ -46,7 +46,7 @@ class StackContextManager(ContextManager):
         return " / ".join(f.screen_key for f in frames[-3:])
 
     # --------- ContextManager API ----------
-    def build(self, agent_state: AgentState, user_id: str, session_id: str) -> Tuple[str, List[Tool]]:
+    def build(self, agent_state: AgentContext, user_id: str, session_id: str) -> Tuple[str, List[Tool]]:
         frames = self._get_frames(agent_state)
 
         # Si no hay frame, empujar index si está configurado
@@ -78,7 +78,7 @@ class StackContextManager(ContextManager):
         
         return system_message, tools
 
-    async def handle_nav(self, agent_state: AgentState, user_id: str, session_id: str, out: Dict[str, Any]) -> None:
+    async def handle_nav(self, agent_state: AgentContext, user_id: str, session_id: str, out: Dict[str, Any]) -> None:
         nav = out.get("nav")
         if not nav:
             return

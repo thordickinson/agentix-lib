@@ -1,11 +1,12 @@
 from __future__ import annotations
 import json
 from textwrap import dedent
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from datetime import datetime
-from .config import RETAIN_TAKE
-from .models import Message, AgentState, ToolResultMessage, Tool, AgentContext
+
+from .utils.serializer import to_json
+from .models import Message, Tool, AgentContext
 from .summarizer import maybe_summarize_and_rotate
 from .repo_protocol import Repo
 from .context import ContextManager
@@ -28,20 +29,6 @@ def _dict_diff(old: Dict[str, Any], new: Dict[str, Any], prefix: str = "") -> Di
             patch[p] = nv
     return patch
 
-def build_context_messages(session_doc: Dict[str, Any], summaries_limit: int = 3) -> List[Message]:
-    msgs: List[Message] = []
-    summaries = session_doc.get("summaries", [])[-summaries_limit:]
-    if summaries:
-        import json as _json
-        stext = "\n---\n".join([
-            _json.dumps({"range": s.get("range"), "summary": s.get("summary")}, ensure_ascii=False)
-            for s in summaries
-        ])
-        msgs.append(Message(role="system", content=f"Resumenes previos (no repitas literalmente):\n{stext}"))
-    tail = session_doc.get("messages", [])[-RETAIN_TAKE:]
-    for m in tail:
-        msgs.append(Message(role=m["role"], content=m["content"]))
-    return msgs
 
 def _format_llm_input(messages: list[dict], tools: list[dict]) -> str:
     def format_message(message: dict) -> str:
@@ -99,25 +86,24 @@ class Agent:
             result = await result
         return result
 
-    async def run(self, user_id: str, session_id: str, agent_input: str, agent_state: Optional[AgentState] = None) -> str:
-        agent_state = agent_state or AgentState()
-        sdoc = await self.repo.get_or_create_session(session_id, user_id)
+    async def run(self, user_id: str, session_id: str, agent_input: str) -> str:
+        agent_context = AgentContext()
+        session_data = await self.repo.get_or_create_session(session_id, user_id)
         
         with langfuse.start_as_current_observation(as_type="agent", name=self.name, input=agent_input) as run_span:
             
             run_span.update(session_id=session_id, user_id=user_id)
-            history = build_context_messages(sdoc)
-            user_msg = Message(role="user", content=agent_input)
-            sdoc = await self.repo.append_message(session_id, user_id, user_msg)
+            history = session_data.messages
+            user_msg = { "role": "user", "content": agent_input }
             history += [user_msg]
             run_messages = [user_msg]
 
             for _ in range(self.max_steps):
                 # Contexto + tools vienen del ContextManager
-                system_message, tools = self.cm.build(agent_state, user_id, session_id)
-                system_msg = Message(role="system", content=system_message)
+                system_message, tools = self.cm.build(agent_context, user_id, session_id)
+                system_msg = { "role": "system", "content": system_message }
                 tool_specs = list(map(tool_to_dict, tools))
-                messages = list(map(lambda m: m.to_wire(), ([system_msg] + history + run_messages)))
+                messages = [system_msg] + history + run_messages
 
                 with langfuse.start_as_current_observation(name=self.model, as_type="generation",
                                                            completion_start_time=datetime.now(),
@@ -149,8 +135,8 @@ class Agent:
                         try:
                             with langfuse.start_as_current_observation(as_type="tool", name=function_call.name, input=function_call.arguments) as tool_span:
                                 params = json.loads(function_call.arguments or "{}")
-                                result = await self.invoke_tool(t, params, None) # TODO : incluir el contexto
-                                json_result = json.dumps(result)
+                                result = await self.invoke_tool(t, params, agent_context)
+                                json_result = to_json(result)
                                 tool_span.update(output=json_result)
                                 run_messages.append({
                                     "tool_call_id": tool_call.id,

@@ -4,24 +4,11 @@ from datetime import datetime, timezone
 
 from pymongo import AsyncMongoClient, ASCENDING, ReturnDocument
 
-from agentix.models import Message
+from agentix.models import Message, Session
 from agentix.repo_protocol import Repo
 
 
 class MongoRepo(Repo):
-    """
-    Implementación async sobre MongoDB para el protocolo Repo.
-    Estructura principal:
-      - sessions: { _id, session_id, user_id, messages: [...], summaries: [...], agent_state: {...}, locks: {...}, created_at, updated_at }
-      - messages (opcional, auditoría): mensajes "append" con metadata
-      - users: { user_id, profile: {...}, created_at, updated_at }
-      - user_memories: { _id, user_id, key, value, created_at, updated_at }
-
-    Notas:
-      - Los mensajes en 'sessions' son la base de ejecución del agente.
-      - La colección 'messages' es opcional para histórico completo y no afecta la ejecución.
-    """
-
     def __init__(
         self,
         uri: str = "mongodb://localhost:27017",
@@ -58,23 +45,12 @@ class MongoRepo(Repo):
         return {"role": msg.role, "content": msg.content, "ts": msg.ts, "meta": msg.meta}
 
     # ---------- Repo API ----------
-    async def get_or_create_session(self, session_id: str, user_id: str) -> Dict[str, Any]:
+    async def get_or_create_session(self, session_id: str, user_id: str) -> Session:
         doc = await self.sessions.find_one({"session_id": session_id, "user_id": user_id})
         if doc:
-            return doc
-
-        now = self._utcnow()
-        new_doc = {
-            "session_id": session_id,
-            "user_id": user_id,
-            "messages": [],       # mensajes embebidos relevantes a ejecución
-            "summaries": [],      # lista de summaries (dicts con range, summary)
-            "agent_state": {},    # estado del agente; ContextManager puede leer/escribir aquí
-            "locks": {"summarize": False},
-            "created_at": now,
-            "updated_at": now,
-        }
-        await self.sessions.insert_one(new_doc)
+            return Session(**doc)
+        new_doc = Session(session_id=session_id, user_id=user_id)
+        await self.sessions.insert_one(new_doc.model_dump())
         return new_doc
 
     async def append_message(self, session_id: str, user_id: str, msg: Message) -> Dict[str, Any]:

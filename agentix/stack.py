@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import Any, Dict, List, Optional
 from dataclasses import dataclass
-from .models import AgentState
+from .models import AgentContext
 
 @dataclass
 class StackFrame:
@@ -15,12 +15,12 @@ class StackManager:
         self.frames: List[StackFrame] = frames or []
 
     @classmethod
-    def from_state(cls, state: AgentState) -> "StackManager":
+    def from_state(cls, state: AgentContext) -> "StackManager":
         frames_data = state.memory.get("ui_stack", [])
         frames = [StackFrame(**fd) for fd in frames_data]
         return cls(frames)
 
-    def to_state(self, state: AgentState):
+    def to_state(self, state: AgentContext):
         state.memory["ui_stack"] = [f.__dict__ for f in self.frames]
 
     def current(self) -> Optional[StackFrame]:

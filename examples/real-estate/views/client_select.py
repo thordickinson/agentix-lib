@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import Any, Dict, List
 from pydantic import BaseModel
 
-from agentix.models import Tool, AgentState
+from agentix.models import Tool, AgentContext
 from agentix.stack.view import View
 
 class SearchClientsInput(BaseModel):
@@ -16,7 +16,7 @@ class SelectClientInput(BaseModel):
 class ClientSelectView(View):
     screen_key = "client_select"
 
-    def instructions(self, agent_state: AgentState, view_state: Dict[str, Any]) -> str:
+    def instructions(self, agent_state: AgentContext, view_state: Dict[str, Any]) -> str:
         return (
             "Selector de clientes.\n"
             "- search_clients {query,top_k}\n"
@@ -24,16 +24,16 @@ class ClientSelectView(View):
             "- __confirm para devolver el cliente, __cancel para salir\n"
         )
 
-    def build_tools(self, agent_state: AgentState, view_state: Dict[str, Any]) -> List[Tool]:
+    def build_tools(self, agent_state: AgentContext, view_state: Dict[str, Any]) -> List[Tool]:
         tools: List[Tool] = []
 
-        async def search_clients(inputs: SearchClientsInput, v: Dict[str, Any], a: AgentState, uid: str, sid: str):
+        async def search_clients(inputs: SearchClientsInput, v: Dict[str, Any], a: AgentContext, uid: str, sid: str):
             q = (inputs.query or "").strip().lower()
             fake = [{"client_id": f"c_{i}", "name": f"{q.title()} {i}"} for i in range(1, inputs.top_k + 1)]
             v["candidates"] = fake
             return {"results": fake}
 
-        async def select_client(inputs: SelectClientInput, v: Dict[str, Any], a: AgentState, uid: str, sid: str):
+        async def select_client(inputs: SelectClientInput, v: Dict[str, Any], a: AgentContext, uid: str, sid: str):
             client = {"client_id": inputs.client_id, "name": inputs.display_name}
             v["selected"] = client
             v["__pending_result"] = client
@@ -41,10 +41,10 @@ class ClientSelectView(View):
 
         class NoInput(BaseModel): pass
 
-        async def _confirm(_i: NoInput, v: Dict[str, Any], a: AgentState, uid: str, sid: str):
+        async def _confirm(_i: NoInput, v: Dict[str, Any], a: AgentContext, uid: str, sid: str):
             return {"nav": "confirm", "result": v.get("__pending_result")}
 
-        async def _cancel(_i: NoInput, v: Dict[str, Any], a: AgentState, uid: str, sid: str):
+        async def _cancel(_i: NoInput, v: Dict[str, Any], a: AgentContext, uid: str, sid: str):
             return {"nav": "cancel"}
 
         tools += [

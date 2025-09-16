@@ -1,25 +1,25 @@
 from __future__ import annotations
-from typing import Any, Dict, Literal, Union, Optional, List
+from typing import Any, Dict, Optional, List
 from datetime import datetime, timezone
-from pydantic import BaseModel, Field, ValidationError
-from litellm import ModelResponse
-
-# ===== Mensajes y estado =====
-Role = Literal["system", "user", "assistant"]
+from pydantic import BaseModel, Field
 
 
 class AgentContext:
     ...
 
 class Message(BaseModel):
-    role: Role
-    content: str
-    ts: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    role: str
+    content: Optional[str]
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    usage_data: Dict[str, Any] = {}
     meta: Dict[str, Any] = Field(default_factory=dict)
 
     def to_wire(self) -> Dict[str, str]:
         """Mensaje en formato listo para el LLM."""
         return {"role": self.role, "content": self.content}
+    
+class SystemMessage(Message):
+    role: str = Field(default="system", frozen=True)
 
 class ToolResultMessage(BaseModel):
     call_id: str
@@ -28,9 +28,26 @@ class ToolResultMessage(BaseModel):
     def from_tool_call():
         ...
 
-class AgentState(BaseModel):
-    memory: Dict[str, Any] = Field(default_factory=dict)
-    scratchpad: list[str] = Field(default_factory=list)
+class SessionSummary(BaseModel):
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    content: str
+
+class Session(BaseModel):
+    session_id: Optional[str] = None
+    user_id: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: Optional[datetime] = None
+    messages: list[Message] = []
+    summaries: list[SessionSummary] = []
+    state: Dict[str, Any] = {}
+
+class UserMemory(BaseModel):
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    content: str
+
+class UserInfo(BaseModel):
+    id: str
+    memories: list[UserMemory] = []
 
 class Param(BaseModel):
     name: str
@@ -40,25 +57,9 @@ class Param(BaseModel):
     default_value: Optional[Any] = None
     enum_values: Optional[List[str]] = None
 
-
 class Tool(BaseModel):
     name: str
     desc: str
     params: List[Param]
     fn: Any
-
-# ===== Salida del modelo =====
-class ToolCall(BaseModel):
-    name: str
-    args: Dict[str, Any]
-
-class ToolCallMsg(BaseModel):
-    type: Literal["tool_call"]
-    call: ToolCall
-
-class Final(BaseModel):
-    type: Literal["final"]
-    answer: str
-
-ModelStep = Union[ToolCallMsg, Final]
 
