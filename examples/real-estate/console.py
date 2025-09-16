@@ -8,12 +8,15 @@ from agentix.context import ContextManager
 from agentix.stack import StackContextManager
 from agentix.utils.console import console_loop
 from .router import build_router
+import os
 
 
 
 def developer_instructions_fn(state: AgentState) -> str:
     tone = state.memory.get("tone", "claro y directo")
     return f"- Sé {tone}. No inventes datos.\n- Responde en español.\n"
+
+os.environ["LANGFUSE_TRACING_ENVIRONMENT"] = "development"
 
 async def interactive_loop():
     # Storage (sesiones/mensajes/estado)
@@ -26,6 +29,7 @@ async def interactive_loop():
 
 
     agent = Agent(
+        name="real_estate",
         repo=repo,
         context_manager=cm
     )

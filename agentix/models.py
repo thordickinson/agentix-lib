@@ -7,6 +7,10 @@ from litellm import ModelResponse
 # ===== Mensajes y estado =====
 Role = Literal["system", "user", "assistant"]
 
+
+class AgentContext:
+    ...
+
 class Message(BaseModel):
     role: Role
     content: str
@@ -16,6 +20,13 @@ class Message(BaseModel):
     def to_wire(self) -> Dict[str, str]:
         """Mensaje en formato listo para el LLM."""
         return {"role": self.role, "content": self.content}
+
+class ToolResultMessage(BaseModel):
+    call_id: str
+    result: str
+
+    def from_tool_call():
+        ...
 
 class AgentState(BaseModel):
     memory: Dict[str, Any] = Field(default_factory=dict)

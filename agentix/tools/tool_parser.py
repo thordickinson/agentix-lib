@@ -2,16 +2,16 @@ from typing import List, Any
 import inspect
 import re
 from enum import Enum
+from ..models import AgentContext
 
 from agentix.models import Param, Tool
-
 
 
 def tool_from_fn(fn: Any) -> Tool:
     name = fn.__name__
     doc = inspect.getdoc(fn) or ""
 
-    # --- Extraer docstring general y per-param ---
+    # Parse docstring (igual que antes)
     desc_lines = []
     param_docs = {}
     param_re = re.compile(r":param\s+([\w\[\]]+)\s+(\w+):\s*(.+)")
@@ -20,14 +20,14 @@ def tool_from_fn(fn: Any) -> Tool:
         line_stripped = line.strip()
         match = param_re.match(line_stripped)
         if match:
-            ptype, pname, pdesc = match.groups()
+            _, pname, pdesc = match.groups()
             param_docs[pname] = pdesc
         elif not line_stripped.startswith(":"):
             desc_lines.append(line_stripped)
 
     desc = " ".join(desc_lines).strip()
 
-    # --- Extraer info de la firma ---
+    # Firma
     sig = inspect.signature(fn)
     params: List[Param] = []
 
@@ -36,22 +36,22 @@ def tool_from_fn(fn: Any) -> Tool:
             continue
 
         annotation = param.annotation
+
+        # 🔥 Ignorar si es AgentContext
+        if annotation is AgentContext:
+            continue
+
         ptype = "Any"
         enum_values = None
-
-        # Detectar tipo + enum
         if annotation is not inspect._empty:
             if isinstance(annotation, type) and issubclass(annotation, Enum):
                 ptype = annotation.__name__
-                enum_values = [e.name for e in annotation]
+                enum_values = [e.value for e in annotation]
             else:
                 ptype = getattr(annotation, "__name__", str(annotation))
 
-        # Opcional y default
         optional = param.default is not inspect._empty
         default_value = None if param.default is inspect._empty else param.default
-
-        # Descripción
         pdesc = param_docs.get(pname, "")
 
         params.append(Param(
@@ -63,10 +63,4 @@ def tool_from_fn(fn: Any) -> Tool:
             enum_values=enum_values
         ))
 
-    return Tool(
-        name=name,
-        desc=desc,
-        params=params,
-        fn=fn
-    )
-
+    return Tool(name=name, desc=desc, params=params, fn=fn)

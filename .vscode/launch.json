@@ -8,7 +8,8 @@
       "name": "Real Estate Example",
       "type": "debugpy",
       "request": "launch",
-      "module": "examples.real-estate.console"
+      "module": "examples.real-estate.console",
+      "justMyCode": true
     }
   ]
 }
