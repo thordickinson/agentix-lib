@@ -17,17 +17,54 @@ class Message(BaseModel):
 
     def to_wire(self) -> Dict[str, str]:
         """Mensaje en formato listo para el LLM."""
-        return {"role": self.role, "content": self.content}
+        wired = { "role": self.role }
+        if self.content:
+            wired["content"] = self.content
+        return wired
+    
+class UserMessage(Message):
+    role: str = Field(default="user", frozen=True)
     
 class SystemMessage(Message):
     role: str = Field(default="system", frozen=True)
 
-class ToolResultMessage(BaseModel):
-    call_id: str
-    result: str
+class ToolCall(BaseModel):
+    tool_call_id: str
+    function_name: str
+    arguments: str
 
-    def from_tool_call():
-        ...
+    def to_wire(self) -> Dict[str, str]:
+        return {
+            "id": self.tool_call_id,
+            "type": "function",
+            "function": {
+                "name": self.function_name,
+                "arguments": self.arguments
+            }
+        }
+
+class AssistantMessage(Message):
+    role: str = Field(default="assistant", frozen=True)
+    finish_reason: str
+    tool_calls: list[ToolCall] = []
+
+    def to_wire(self):
+        wired = super().to_wire()
+        if len(self.tool_calls) > 0:
+            wired["tool_calls"] = [tc.to_wire() for tc in self.tool_calls]
+        return wired
+
+
+class ToolResultMessage(Message):
+    role: str = Field(default="tool", frozen=True)
+    tool_call_id: str
+    name: str
+
+    def to_wire(self):
+        wired = super().to_wire()
+        wired["tool_call_id"] = self.tool_call_id
+        wired["name"] = self.name
+        return wired
 
 class SessionSummary(BaseModel):
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

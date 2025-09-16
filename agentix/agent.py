@@ -6,7 +6,7 @@ from typing import Any, Dict, Optional
 from datetime import datetime
 
 from .utils.serializer import to_json
-from .models import Message, Tool, AgentContext
+from .models import ToolResultMessage, Tool, ToolCall, AgentContext, SystemMessage, UserMessage, AssistantMessage
 from .summarizer import maybe_summarize_and_rotate
 from .repo_protocol import Repo
 from .context import ContextManager
@@ -36,7 +36,7 @@ def _format_llm_input(messages: list[dict], tools: list[dict]) -> str:
         header = '###' if role == 'system' else '*'
         footer = "\n====================\n\n" if role == 'system' else ''
         separator = '\n\n' if role == 'system' else ':'
-        return f"{header} {role}{separator} {message.get("content", "")[:512]}{footer}"
+        return f"{header} {role}{separator} {(message.get("content", None) or "")[:512]}{footer}"
     def format_tool(tool: dict) -> str:
         funct = tool.get("function", {})
         return f"* {funct.get("name")}: {funct.get("description", "")[:64]}"
@@ -49,6 +49,31 @@ def _format_llm_input(messages: list[dict], tools: list[dict]) -> str:
     """)
 
 
+def _parse_assistant_response(response: litellm.ModelResponse) -> AssistantMessage:
+    choice: litellm.Choices = response.choices[0]
+    finish_reason = choice.finish_reason
+    usage = response.model_extra.get("usage", {})
+    usage_details = {
+                        "completion_tokens": usage.get("completion_tokens", None),
+                        "prompt_tokens": usage.get("prompt_tokens", None),
+                        "total_tokens": usage.get("total_tokens", None)
+                    }
+    
+    def as_tool_call(t: litellm.ChatCompletionMessageToolCall) -> ToolCall:
+        return ToolCall(
+            tool_call_id=t.id,
+            function_name=t.function.name,
+            arguments=t.function.arguments
+        )
+
+    tool_calls = list(map(as_tool_call, choice.message.tool_calls or []))
+
+    return AssistantMessage(
+        finish_reason=finish_reason,
+        usage_data=usage_details,
+        content=choice.message.content,
+        tool_calls=tool_calls
+    )
 class Agent:
     """
     El Agent delega TODO el contexto/UI al ContextManager (inyectado).
@@ -94,65 +119,49 @@ class Agent:
             
             run_span.update(session_id=session_id, user_id=user_id)
             history = session_data.messages
-            user_msg = { "role": "user", "content": agent_input }
-            history += [user_msg]
+            user_msg = UserMessage(content=agent_input)
             run_messages = [user_msg]
 
             for _ in range(self.max_steps):
-                # Contexto + tools vienen del ContextManager
                 llm_input = self.cm.build(agent_context)
-                system_msg = { "role": "system", "content": llm_input.system }
+                system_msg = SystemMessage(content=llm_input.system)
                 tool_specs = list(map(tool_to_dict, llm_input.tools))
-                messages = [system_msg] + history + run_messages
+                messages = list(map(lambda m: m.to_wire(), ([system_msg] + history + run_messages)))
 
                 with langfuse.start_as_current_observation(name=self.model, as_type="generation",
                                                            completion_start_time=datetime.now(),
                                                            input=_format_llm_input(messages, tool_specs),
                                                            model=self.model) as generation_span:
                     raw = await litellm.acompletion(model=self.model, messages=messages, tools=tool_specs, tool_choice="auto")
-                    response: litellm.Choices = raw.choices[0]
-                    usage = raw.model_extra.get("usage", {})
-                    usage_details = {
-                        "completion_tokens": usage.get("completion_tokens", None),
-                        "prompt_tokens": usage.get("prompt_tokens", None),
-                        "total_tokens": usage.get("total_tokens", None)
-                    }
-                    generation_span.update(output=raw, usage_details=usage_details)
+                    assistant_message = _parse_assistant_response(raw)
+                    run_messages.append(assistant_message)
+                    generation_span.update(output=raw, usage_details=assistant_message.usage_data)
 
-                if response.finish_reason == "tool_calls":
-                    tool_calls = response.message.tool_calls or []
+                if assistant_message.finish_reason == "tool_calls":
+                    tool_calls = assistant_message.tool_calls
                     tools_by_name = {t.name: t for t in llm_input.tools}
                     for tool_call in tool_calls:
-                        function_call = tool_call.function
-                        t = tools_by_name.get(function_call.name)
-
-                        run_messages.append({
-                            "role": "tool",
-                            "tool_call_id": tool_call.id,
-                            "content": function_call.arguments
-                        })
+                        t = tools_by_name.get(tool_call.function_name)
                         
                         try:
-                            with langfuse.start_as_current_observation(as_type="tool", name=function_call.name, input=function_call.arguments) as tool_span:
-                                params = json.loads(function_call.arguments or "{}")
+                            with langfuse.start_as_current_observation(as_type="tool", name=tool_call.function_name, input=tool_call.arguments) as tool_span:
+                                params = json.loads(tool_call.arguments or "{}")
                                 result = await self.invoke_tool(t, params, agent_context)
                                 json_result = to_json(result)
                                 tool_span.update(output=json_result)
-                                run_messages.append({
-                                    "tool_call_id": tool_call.id,
-                                    "role": "tool",
-                                    "name": function_call.name,
-                                    "content": json_result,
-                                })
+                                run_messages.append(ToolResultMessage(
+                                    tool_call_id=tool_call.tool_call_id,
+                                    name=tool_call.function_name,
+                                    content=json_result
+                                ))
                         except Exception as ex:
                             print(ex)
                             raise Exception("Error while invoking function")
 
 
-                if response.finish_reason == "stop":
-                    final_msg = Message(role="assistant", content=response.message.content)
-                    run_span.update(output=response.message.content)
-                    return final_msg.content
+                if assistant_message.finish_reason == "stop":
+                    run_span.update(output=assistant_message.content)
+                    return assistant_message.content
 
             fallback = "No se obtuvo respuesta final dentro del límite de pasos."
             run_span.update(output="[max-invocation-limit]")
