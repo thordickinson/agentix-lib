@@ -1,4 +1,5 @@
 from __future__ import annotations
+from email.message import Message
 import json
 from textwrap import dedent
 from typing import Any, Dict, Optional
@@ -6,8 +7,7 @@ from typing import Any, Dict, Optional
 from datetime import datetime
 
 from .utils.serializer import to_json
-from .models import ToolResultMessage, Tool, ToolCall, AgentContext, SystemMessage, UserMessage, AssistantMessage
-from .summarizer import maybe_summarize_and_rotate
+from .models import Session, ToolResultMessage, Tool, ToolCall, AgentContext, SystemMessage, UserMessage, AssistantMessage, SessionSummary
 from .repo_protocol import Repo
 from .context import ContextManager
 from .tools.litellm_formatter import tool_to_dict
@@ -85,15 +85,19 @@ class Agent:
         context_manager: ContextManager,
         model: Optional[str] = "gpt-3.5-turbo",
         max_steps: int = 6,
+        max_memory_messages: int = 45,
+        retain_take: int = 15
     ):
         self.name = name
+        self.max_memory_messages = max_memory_messages
+        self.retain_take = retain_take
         self.repo = repo
         self.cm = context_manager
         self.max_steps = max_steps
         self.model = model
 
 
-    async def invoke_tool(self, tool: Tool, params: dict, agent_context: AgentContext | None = None):
+    async def _invoke_tool(self, tool: Tool, params: dict, agent_context: AgentContext | None = None):
         """
         Invoca tool.fn con params (del LLM) y opcionalmente inyecta AgentContext.
         """
@@ -116,7 +120,6 @@ class Agent:
         session_data = await self.repo.get_or_create_session(session_id, user_id)
         
         with langfuse.start_as_current_observation(as_type="agent", name=self.name, input=agent_input) as run_span:
-            
             run_span.update(session_id=session_id, user_id=user_id)
             history = session_data.messages
             user_msg = UserMessage(content=agent_input)
@@ -146,7 +149,7 @@ class Agent:
                         try:
                             with langfuse.start_as_current_observation(as_type="tool", name=tool_call.function_name, input=tool_call.arguments) as tool_span:
                                 params = json.loads(tool_call.arguments or "{}")
-                                result = await self.invoke_tool(t, params, agent_context)
+                                result = await self._invoke_tool(t, params, agent_context)
                                 json_result = to_json(result)
                                 tool_span.update(output=json_result)
                                 run_messages.append(ToolResultMessage(
@@ -167,3 +170,40 @@ class Agent:
             run_span.update(output="[max-invocation-limit]")
             return fallback
 
+    async def _end_run(self, run_messages: list[Message], session: Session):
+        old_messages = session.messages
+        all_messages = old_messages + run_messages
+        if len(all_messages) > self.max_memory_messages:
+            summary, rotated = await self._summarize_messages(all_messages)
+            session.messages = rotated
+            session.summaries.append(summary)
+        await self.repo.save_session(session)
+        await self.repo.append_messages(session.session_id, session.user_id, run_messages)
+    
+    async def _summarize_messages(self, messages: list[Message]) -> str:
+        remaining = messages[-self.retain_take:]
+        to_summarize = messages[:-self.retain_take]
+        summary_prompt = dedent(f"""
+        Resume brevemente (1-2 frases) la siguiente conversación entre un usuario y un asistente de IA.
+        El resumen debe capturar los puntos clave y el contexto necesario para entender la conversación.
+        El resumen debe estar en español.
+        El resumen debe ser neutral y objetivo, sin interpretaciones ni juicios.
+        El resumen debe ser adecuado para que el asistente de IA pueda continuar la conversación sin perder contexto.
+        El resumen debe ser en formato JSON: {{ "summary": "texto del resumen" }}
+        Conversación:
+        {''.join([f"- {m.role}: {m.content}\n" for m in to_summarize])}
+        """)
+        llm_messages = [SystemMessage(content=summary_prompt)] + remaining
+        raw = await litellm.acompletion(
+            model=self.model,
+            messages=[m.to_wire() for m in llm_messages],
+        )
+        choice = raw.choices[0]
+        content = choice.message.content or '{"summary": "No se pudo generar resumen"}'
+        try:
+            parsed = json.loads(content)
+            summary_text = parsed.get("summary", "No se pudo generar resumen")
+        except:
+            summary_text = "No se pudo generar resumen"
+        summary = SessionSummary(content=summary_text)
+        return summary, remaining
