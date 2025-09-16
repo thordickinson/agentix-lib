@@ -1,14 +1,14 @@
 from __future__ import annotations
-from typing import Any, Dict, List
+from typing import List
 from datetime import datetime, timezone
 
-from pymongo import AsyncMongoClient, ASCENDING, ReturnDocument
+from pymongo import AsyncMongoClient, ASCENDING
 
 from agentix.models import Message, Session
-from agentix.repo_protocol import Repo
+from agentix.agent_repository import AgentRepository
 
 
-class MongoRepo(Repo):
+class MongoAgentRepository(AgentRepository):
     def __init__(
         self,
         uri: str = "mongodb://localhost:27017",
@@ -16,7 +16,6 @@ class MongoRepo(Repo):
         sessions_col: str = "sessions",
         messages_col: str = "messages",
         users_col: str = "users",
-        user_memories_col: str = "user_memories",
         audit_messages: bool = True,
     ):
         self.client = AsyncMongoClient(uri)
@@ -24,7 +23,6 @@ class MongoRepo(Repo):
         self.sessions = self.db[sessions_col]
         self.messages = self.db[messages_col]
         self.users = self.db[users_col]
-        self.user_memories = self.db[user_memories_col]
         self.audit_messages = audit_messages
 
     # ---------- Setup ----------
@@ -32,18 +30,7 @@ class MongoRepo(Repo):
         await self.sessions.create_index([("session_id", ASCENDING), ("user_id", ASCENDING)], unique=True)
         await self.messages.create_index([("session_id", ASCENDING), ("ts", ASCENDING)])
         await self.users.create_index([("user_id", ASCENDING)], unique=True)
-        await self.user_memories.create_index([("user_id", ASCENDING), ("key", ASCENDING)], unique=True)
-
-    # ---------- Helpers ----------
-    @staticmethod
-    def _utcnow() -> datetime:
-        return datetime.now(timezone.utc)
-
-    @staticmethod
-    def _msg_to_doc(msg: Message) -> Dict[str, Any]:
-        # Mongo acepta datetime; mantenemos ts tal cual
-        return {"role": msg.role, "content": msg.content, "ts": msg.ts, "meta": msg.meta}
-
+        
     # ---------- Repo API ----------
     async def get_or_create_session(self, session_id: str, user_id: str) -> Session:
         doc = await self.sessions.find_one({"session_id": session_id, "user_id": user_id})
@@ -53,10 +40,12 @@ class MongoRepo(Repo):
         await self.sessions.insert_one(new_doc.model_dump())
         return new_doc
 
-    def save_session(self, session):
-        # TODO implement this
-        ...
+    async def save_session(self, session: Session):
+        session.updated_at = datetime.now(timezone.utc)
+        await self.sessions.find_one_and_update(
+            {"session_id": session.session_id, "user_id": session.user_id},
+            {"$set": session.model_dump()}
+        )
 
-    def append_messages(self, session_id: str, user_id: str, messages: List[Message]) -> None:
-        # TODO implement this
-        ...
+    async def append_messages(self, session_id: str, user_id: str, messages: List[Message]) -> None:
+        await self.messages.insert_many([m.model_dump() | {"session_id": session_id, "user_id": user_id, "ts": datetime.now(timezone.utc)} for m in messages])

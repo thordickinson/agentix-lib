@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, Optional, List, Union
 from datetime import datetime, timezone
 from pydantic import BaseModel, Field
 
@@ -70,14 +70,7 @@ class SessionSummary(BaseModel):
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     content: str
 
-class Session(BaseModel):
-    session_id: Optional[str] = None
-    user_id: str
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: Optional[datetime] = None
-    messages: list[Message] = []
-    summaries: list[SessionSummary] = []
-    state: Dict[str, Any] = {}
+
 
 class UserMemory(BaseModel):
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -101,3 +94,13 @@ class Tool(BaseModel):
     params: List[Param]
     fn: Any
 
+MessageType = Union[UserMessage, SystemMessage, AssistantMessage, ToolResultMessage]
+
+class Session(BaseModel):
+    session_id: Optional[str] = None
+    user_id: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: Optional[datetime] = None
+    messages: list[MessageType] = []
+    summaries: list[SessionSummary] = []
+    state: Dict[str, Any] = {}

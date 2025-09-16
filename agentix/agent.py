@@ -1,5 +1,4 @@
 from __future__ import annotations
-from email.message import Message
 import json
 from textwrap import dedent
 from typing import Any, Dict, Optional
@@ -7,12 +6,15 @@ from typing import Any, Dict, Optional
 from datetime import datetime
 
 from .utils.serializer import to_json
-from .models import Session, ToolResultMessage, Tool, ToolCall, AgentContext, SystemMessage, UserMessage, AssistantMessage, SessionSummary
-from .repo_protocol import Repo
+from .models import Session, ToolResultMessage, Tool, ToolCall, AgentContext, SystemMessage, UserMessage, AssistantMessage, SessionSummary, MessageType
+from .agent_repository import AgentRepository
 from .context import ContextManager
 from .tools.litellm_formatter import tool_to_dict
+import logging
 import inspect
 import litellm
+
+logger = logging.getLogger(__name__)
 
 from langfuse import get_client
 langfuse = get_client()
@@ -81,7 +83,7 @@ class Agent:
     def __init__(
         self,
         name: str,
-        repo: Repo,
+        repository: AgentRepository,
         context_manager: ContextManager,
         model: Optional[str] = "gpt-3.5-turbo",
         max_steps: int = 6,
@@ -91,7 +93,7 @@ class Agent:
         self.name = name
         self.max_memory_messages = max_memory_messages
         self.retain_take = retain_take
-        self.repo = repo
+        self.repo = repository
         self.cm = context_manager
         self.max_steps = max_steps
         self.model = model
@@ -158,29 +160,36 @@ class Agent:
                                     content=json_result
                                 ))
                         except Exception as ex:
-                            print(ex)
-                            raise Exception("Error while invoking function")
+                            logger.error(ex)
+                            run_messages.append(ToolResultMessage(
+                                tool_call_id=tool_call.tool_call_id,
+                                name=tool_call.function_name,
+                                content=json.dumps({"status": "error", "message": str(ex)})
+                            ))
 
 
                 if assistant_message.finish_reason == "stop":
                     run_span.update(output=assistant_message.content)
+                    await self._end_run(run_messages, session_data)
                     return assistant_message.content
 
             fallback = "No se obtuvo respuesta final dentro del límite de pasos."
             run_span.update(output="[max-invocation-limit]")
             return fallback
 
-    async def _end_run(self, run_messages: list[Message], session: Session):
+    async def _end_run(self, run_messages: list[MessageType], session: Session):
         old_messages = session.messages
         all_messages = old_messages + run_messages
         if len(all_messages) > self.max_memory_messages:
             summary, rotated = await self._summarize_messages(all_messages)
             session.messages = rotated
             session.summaries.append(summary)
+        else:
+            session.messages = all_messages
         await self.repo.save_session(session)
         await self.repo.append_messages(session.session_id, session.user_id, run_messages)
     
-    async def _summarize_messages(self, messages: list[Message]) -> str:
+    async def _summarize_messages(self, messages: list[MessageType]) -> tuple[str, list[MessageType]]:
         remaining = messages[-self.retain_take:]
         to_summarize = messages[:-self.retain_take]
         summary_prompt = dedent(f"""
@@ -189,7 +198,7 @@ class Agent:
         El resumen debe estar en español.
         El resumen debe ser neutral y objetivo, sin interpretaciones ni juicios.
         El resumen debe ser adecuado para que el asistente de IA pueda continuar la conversación sin perder contexto.
-        El resumen debe ser en formato JSON: {{ "summary": "texto del resumen" }}
+        El resumen debe ser en formato texto, sin ningún comentario adicional y listo para ser usado.
         Conversación:
         {''.join([f"- {m.role}: {m.content}\n" for m in to_summarize])}
         """)
@@ -199,11 +208,6 @@ class Agent:
             messages=[m.to_wire() for m in llm_messages],
         )
         choice = raw.choices[0]
-        content = choice.message.content or '{"summary": "No se pudo generar resumen"}'
-        try:
-            parsed = json.loads(content)
-            summary_text = parsed.get("summary", "No se pudo generar resumen")
-        except:
-            summary_text = "No se pudo generar resumen"
-        summary = SessionSummary(content=summary_text)
+        content = choice.message.content or None
+        summary = SessionSummary(content=content)
         return summary, remaining

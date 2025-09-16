@@ -4,7 +4,7 @@ import pprint
 from typing import Callable, Optional, Sequence
 
 from agentix import Agent, AgentContext
-from agentix.repo_protocol import Repo
+from agentix.agent_repository import AgentRepository
 
 # Tipo para función que imprime/serializa el "stack" según tu ContextManager
 StackDumpFn = Callable[[AgentContext], Sequence[dict]]
@@ -22,7 +22,7 @@ def _default_stack_dump(state: AgentContext) -> Sequence[dict]:
 async def console_loop(
     *,
     agent: Agent,
-    repo: Repo,
+    repo: AgentRepository,
     user_id: str = "user_console",
     session_id: str = "session_console",
     prompt: str = "Tú: ",
@@ -75,13 +75,13 @@ async def console_loop(
 
         # --- Entrada normal: se envía al agente ---
         out = await agent.run(user_id, session_id, user_input)
-        print(f"Agente: {out}")
+        print(f"\033[94mAgente: {out}\033[0m")
 
 
 def run_console_sync(
     *,
     agent: Agent,
-    repo: Repo,
+    repo: AgentRepository,
     user_id: str = "user_console",
     session_id: str = "session_console",
     state: Optional[AgentContext] = None,
