@@ -5,6 +5,7 @@ from typing import Callable, Optional, Sequence
 
 from agentix import Agent, AgentContext
 from agentix.agent_repository import AgentRepository
+from agentix.models import MessageType
 
 # Tipo para función que imprime/serializa el "stack" según tu ContextManager
 StackDumpFn = Callable[[AgentContext], Sequence[dict]]
@@ -26,7 +27,7 @@ async def console_loop(
     user_id: str = "user_console",
     session_id: str = "session_console",
     prompt: str = "Tú: ",
-    intro: str = "=== Agentix Console ===\nComandos: :exit, :state, :stack, :messages, :reset",
+    intro: str = "=== Agentix Console ===\nComandos: :exit, :summaries :messages",
     messages_tail: int = 10,
     stack_dump_fn: StackDumpFn = _default_stack_dump,
     input_fn: Callable[[str], str] = input,
@@ -64,13 +65,21 @@ async def console_loop(
             print("Saliendo...")
             break
 
+        if low == ":summaries":
+            session = await agent.get_session_data(user_id, session_id)
+            summaries = f"\n".join([f"* {summary.content}" for summary in session.summaries])
+            print(f"\033[92mResumenes: \n===\n{summaries}\n===\n\033[0m")
+            continue
+
         if low == ":messages":
-            sdoc = await repo.get_or_create_session(session_id, user_id)
-            print(f"\n--- Últimos mensajes (tail={messages_tail}) ---")
-            for m in sdoc.get("messages", [])[-messages_tail:]:
-                role = m.get("role")
-                content = m.get("content")
-                print(f"{role}: {content}")
+            session = await agent.get_session_data(user_id, session_id)
+            messages = session.messages
+
+            def format_message(message: MessageType):
+                return f"{message.role}: {message.content or "--"}"
+            messages_str = "\n".join([f"* {format_message(m)}" for m in messages])
+            print(f"\033[92mÚltimos mensajes \n===\n{messages_str}\n===\n\033[0m")
+
             continue
 
         # --- Entrada normal: se envía al agente ---

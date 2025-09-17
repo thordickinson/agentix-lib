@@ -143,11 +143,15 @@ class Agent:
         if hasattr(result, "__await__"):
             result = await result
         return result
+    
+    async def get_session_data(self, user_id: str, session_id: str) -> Session:
+        session_data = await self.repo.get_or_create_session(session_id, user_id)
+        return session_data
 
     async def run(self, user_id: str, session_id: str, agent_input: str) -> str:
         run_id = str(uuid.uuid4())
         agent_context = AgentContext(session_id = session_id, user_id=user_id, run_id=run_id)
-        session_data = await self.repo.get_or_create_session(session_id, user_id)
+        session_data = await self.get_session_data(session_id=session_id, user_id=user_id)
         
         with langfuse.start_as_current_observation(as_type="agent", name=self.name, input=agent_input) as run_span:
             run_span.update(session_id=session_id, user_id=user_id, metadata={"run_id": run_id})
@@ -290,7 +294,7 @@ class Agent:
         content = choice.message.content or None
         summary = SessionSummary(content=content)
         remaining = flatten(remaining)
-        self._send_event("summarization_completed", summary[:64])
+        await self._send_event("summarization_completed", content[:64])
         return summary, remaining
 
    
