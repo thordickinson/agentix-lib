@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 
 class AgentContext(BaseModel):
+    run_id: str
     session_id: str
     user_id: str
 
@@ -14,6 +15,7 @@ class Message(BaseModel):
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     usage_data: Dict[str, Any] = {}
     meta: Dict[str, Any] = Field(default_factory=dict)
+    run_id: Optional[str] = None
 
     def to_wire(self) -> Dict[str, str]:
         """Mensaje en formato listo para el LLM."""

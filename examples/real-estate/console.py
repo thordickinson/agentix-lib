@@ -26,7 +26,9 @@ async def get_weather(city: str) -> int:
     Obtiene el clima en la ciudad dada en grados celcius.
     :param str city: el nombre de la ciudad
     """
-    return random.randint(19, 30)
+    temperature = random.randint(19, 30) 
+    print(f"\tGetting temperature in {city} -> {temperature}")
+    return temperature
 
 async def interactive_loop():
     # Storage (sesiones/mensajes/estado)
@@ -47,8 +49,7 @@ async def interactive_loop():
         name="real_estate",
         repository=repo,
         context_manager=cm,
-        max_memory_messages=10,
-        retain_take=5
+        max_interactions_in_memory=10
     )
 
     user_id = "user_demo"
