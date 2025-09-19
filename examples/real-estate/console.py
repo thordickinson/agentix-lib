@@ -45,7 +45,7 @@ async def interactive_loop():
     os.environ["LANGFUSE_TRACING_ENABLED"] = "false"
 
     def log_events(event: AgentEvent):
-        print(f"{event.type}: {event.message or '<no message>'}")
+        print(f"\033[91m==== \n {event.type}: {event.message or '<no message>'} \n ====\033[0m")
 
 
     agent = Agent(
@@ -53,6 +53,7 @@ async def interactive_loop():
         repository=repo,
         context_manager=cm,
         max_interactions_in_memory=10,
+        max_summaries_in_context=3,
         event_listener=log_events
     )
 

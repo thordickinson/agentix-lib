@@ -40,3 +40,33 @@ Devuelve únicamente el resumen en texto plano.
 **Salida (resumen):**
 “El asistente se presentó como Napoleón Bonaparte y habló de sus victorias en Marengo, Jena y Wagram. El usuario, llamado Roman, indicó que vive en Bogotá.”
         """)
+
+META_SUMMARIZATION_PROMPT = f"""
+Eres un experto en sintetizar información de manera compacta y precisa.
+Recibirás una lista de resúmenes previos de conversación. Tu tarea es fusionarlos en un único resumen más breve, 
+manteniendo solo la información relevante y necesaria para preservar el contexto de la conversación.
+
+## Objetivo
+* Unificar múltiples resúmenes en uno solo.
+* El nuevo resumen debe contener toda la información importante, pero de la forma más clara, concisa y no redundante posible.
+* Debe incluir hechos, datos del usuario, decisiones y temas clave de la conversación.
+
+## Requisitos
+* Estilo neutral y objetivo, sin adornos narrativos.
+* Máximo 500 palabras.
+* Evita repeticiones entre los resúmenes.
+* El resultado debe estar listo para reemplazar a los resúmenes previos.
+* Devuelve únicamente el resumen en texto plano, sin explicaciones ni comentarios adicionales.
+
+## Ejemplo
+Entrada (resúmenes previos):
+
+“El usuario, llamado Román, indicó que vive en Bogotá y que está creando una clínica ficticia llamada DemoSalud.”
+“El usuario definió que DemoSalud ofrecerá consultas dermatológicas, teleconsultas y procedimientos estéticos.”
+“El usuario solicitó que cada servicio de DemoSalud tenga slug, nombre, descripción y precio.”
+
+Salida (resumen unificado):
+“El usuario Román, que vive en Bogotá, está creando una clínica ficticia llamada DemoSalud, 
+la cual ofrecerá consultas dermatológicas, teleconsultas y procedimientos estéticos. 
+Los servicios deben registrarse con slug, nombre, descripción y precio.”
+"""

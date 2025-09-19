@@ -8,7 +8,7 @@ from datetime import datetime
 from pydantic import BaseModel
 
 from agentix.utils.collections import flatten
-from .prompts.summarization import  SUMMARIZATION_SYSTEM_PROMPT
+from .prompts.summarization import  SUMMARIZATION_SYSTEM_PROMPT, META_SUMMARIZATION_PROMPT
 
 from .utils.serializer import to_json
 from .models import Session, ToolResultMessage, Tool, ToolCall, AgentContext, SystemMessage, UserMessage, AssistantMessage, SessionSummary, MessageType
@@ -105,6 +105,7 @@ class Agent:
         model: Optional[str] = "gpt-3.5-turbo",
         max_steps: int = 6,
         max_interactions_in_memory: int = 15,
+        max_summaries_in_context = 5,
         interations_retain: int = 5,
         event_listener: Optional[EventListener] = None
     ):
@@ -116,6 +117,7 @@ class Agent:
         self.max_steps = max_steps
         self.model = model
         self.event_listener = event_listener
+        self.max_summaries_in_context = max_summaries_in_context
 
 
     async def _send_event(self, type: str, message: Optional[str] = None):
@@ -255,7 +257,8 @@ class Agent:
             summary, rotated = await self._summarize_runs(runs, session)
             session.messages = rotated
             session.summaries.append(summary)
-            await self._compress_summaries(session)
+            summaries = await self._compress_summaries(session)
+            session.summaries = summaries
         else:
             session.messages = all_messages
         await self.repo.save_session(session)
@@ -300,21 +303,33 @@ class Agent:
         {to_keep}
         </messages_to_keep>
 """
+        content = await self._ask_llm(SUMMARIZATION_SYSTEM_PROMPT, message)
+        summary = SessionSummary(content=content)
+        remaining = flatten(remaining)
+        await self._send_event("summarization_completed", content[:64])
+        return summary, remaining
 
-        llm_messages = [SystemMessage(content=SUMMARIZATION_SYSTEM_PROMPT), UserMessage(content=message)]
+    async def _ask_llm(self, system: str, user: str) -> str:
+        llm_messages = [SystemMessage(content=system), UserMessage(content=user)]
         raw = await litellm.acompletion(
             model=self.model,
             messages=[m.to_wire() for m in llm_messages],
         )
         choice = raw.choices[0]
         content = choice.message.content or None
-        summary = SessionSummary(content=content)
-        remaining = flatten(remaining)
-        await self._send_event("summarization_completed", content[:64])
-        return summary, remaining
-
+        return content
    
-    async def _compress_summaries(self, session: Session):
-        if len(session.summaries) < 10:
-            return
-        ... # Here to summarize session summariess
+    async def _compress_summaries(self, session: Session) -> list[SessionSummary]:
+        if len(session.summaries) < self.max_summaries_in_context:
+            return session.summaries
+        await self._send_event("meta_summarization")
+        summaries = "\n".join([f"* {s}" for s in session.summaries])
+        message = dedent(f"""
+            Sintetiza los siguientes resumenes:
+            <summaries>
+            {summaries}
+            </summaries>
+        """)
+        summary = await self._ask_llm(META_SUMMARIZATION_PROMPT, message)
+        return [SessionSummary(content=summary)]
+
