@@ -147,6 +147,21 @@ class Agent:
     async def get_session_data(self, user_id: str, session_id: str) -> Session:
         session_data = await self.repo.get_or_create_session(session_id, user_id)
         return session_data
+    
+    async def _add_session_data(self, system_prompt: str, session: Session) -> str:
+        parts = [system_prompt]
+        if len(session.summaries) > 0:
+            parts.append(dedent(f"""
+                A continuación se listan resúmenes de partes anteriores de la conversación que ya no están disponibles en detalle.
+                Estos resúmenes representan contexto previo que debes tener en cuenta para continuar de forma coherente.
+                Utilízalos como si fueran la memoria de lo que ocurrió antes, tanto para responder al usuario como para decidir llamadas a funciones.
+            
+                ## Resúmenes previos:
+                <previous_summaries>
+                    {'\n'.join([f'* {summary.content}' for summary in session.summaries])}
+                </previous_summaries>
+            """))
+        return "\n---\n".join(parts)
 
     async def run(self, user_id: str, session_id: str, agent_input: str) -> str:
         run_id = str(uuid.uuid4())
@@ -161,7 +176,8 @@ class Agent:
 
             for _ in range(self.max_steps):
                 llm_input = self.cm.build(agent_context)
-                system_msg = SystemMessage(run_id=run_id, content=llm_input.system)
+                full_system_message = await self._add_session_data(llm_input.system, session=session_data)
+                system_msg = SystemMessage(run_id=run_id, content=full_system_message)
                 tool_specs = list(map(tool_to_dict, llm_input.tools))
                 messages = list(map(lambda m: m.to_wire(), ([system_msg] + history + run_messages)))
 

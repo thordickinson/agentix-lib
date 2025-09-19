@@ -5,7 +5,7 @@ from typing import Callable, Optional, Sequence
 
 from agentix import Agent, AgentContext
 from agentix.agent_repository import AgentRepository
-from agentix.models import MessageType
+from agentix.models import MessageType, Session
 
 # Tipo para función que imprime/serializa el "stack" según tu ContextManager
 StackDumpFn = Callable[[AgentContext], Sequence[dict]]
@@ -19,6 +19,13 @@ def _default_stack_dump(state: AgentContext) -> Sequence[dict]:
     if isinstance(stack, list):
         return [dict(x) for x in stack]
     return []
+
+def print_messages(session: Session):
+    messages = session.messages
+    def format_message(message: MessageType):
+        return f"{message.role}: {message.content or "--"}"
+    messages_str = "\n".join([f"* {format_message(m)}" for m in messages])
+    print(f"\033[92mÚltimos mensajes \n===\n{messages_str}\n===\n\033[0m")
 
 async def console_loop(
     *,
@@ -54,6 +61,10 @@ async def console_loop(
     """
     print(intro)
 
+    session = await agent.get_session_data(user_id=user_id, session_id=session_id)
+    print_messages(session)
+
+
     while True:
         user_input = input_fn(prompt).strip()
         if not user_input:
@@ -73,13 +84,7 @@ async def console_loop(
 
         if low == ":messages":
             session = await agent.get_session_data(user_id, session_id)
-            messages = session.messages
-
-            def format_message(message: MessageType):
-                return f"{message.role}: {message.content or "--"}"
-            messages_str = "\n".join([f"* {format_message(m)}" for m in messages])
-            print(f"\033[92mÚltimos mensajes \n===\n{messages_str}\n===\n\033[0m")
-
+            print_messages(session)
             continue
 
         # --- Entrada normal: se envía al agente ---

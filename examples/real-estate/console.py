@@ -3,7 +3,7 @@ import asyncio
 from textwrap import dedent
 from typing import Optional
 
-from agentix import Agent, AgentContext
+from agentix import Agent, AgentEvent
 from agentix.storage import MongoAgentRepository
 from agentix.context import ContextManager, SimpleContextManager
 from agentix.tools import tool_from_fn
@@ -44,12 +44,16 @@ async def interactive_loop():
     cm: ContextManager = SimpleContextManager(system, tools=[tool_from_fn(get_weather)])
     os.environ["LANGFUSE_TRACING_ENABLED"] = "false"
 
+    def log_events(event: AgentEvent):
+        print(f"{event.type}: {event.message or '<no message>'}")
+
 
     agent = Agent(
         name="real_estate",
         repository=repo,
         context_manager=cm,
-        max_interactions_in_memory=10
+        max_interactions_in_memory=10,
+        event_listener=log_events
     )
 
     user_id = "user_demo"
